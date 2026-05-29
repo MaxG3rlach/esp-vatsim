@@ -2,136 +2,100 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>VATSIM JSON API</title>
 </head>
 <body>
-<pre id="o">Loading...</pre>
+<pre id="o"></pre>
 
 <script>
-var AIRPORTS = ['EHRD','EHAM','EHGG','EHEH'];
-var DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
-var BOOK_URL = 'https://atc-bookings.vatsim.net/api/bookings';
+async function run() {
+  var AIRPORTS = ['EHRD','EHAM','EHGG','EHEH'];
 
-var ROLE_SUFFIXES = {
-  DEL:['_DEL'],
-  GND:['_GND','_AGND','_RAMP'],
-  TWR:['_TWR'],
-  APP:['_APP','_DEP']
-};
+  var DATA_URL = 'https://data.vatsim.net/v3/vatsim-data.json';
+  var BOOK_URL = 'https://atc-bookings.vatsim.net/api/bookings';
 
-function getRole(cs) {
-  cs = cs.toUpperCase();
-  for (var r in ROLE_SUFFIXES) {
-    var s = ROLE_SUFFIXES[r];
-    for (var i=0;i<s.length;i++) {
-      if (cs.indexOf(s[i]) !== -1) return r;
+  var ROLE_SUFFIXES = {
+    DEL:['_DEL'],
+    GND:['_GND','_AGND','_RAMP'],
+    TWR:['_TWR'],
+    APP:['_APP','_DEP']
+  };
+
+  function getRole(cs){
+    cs = cs.toUpperCase();
+    for (var r in ROLE_SUFFIXES) {
+      for (var i=0;i<ROLE_SUFFIXES[r].length;i++){
+        if (cs.indexOf(ROLE_SUFFIXES[r][i]) !== -1) return r;
+      }
     }
+    return null;
   }
-  return null;
-}
 
-function run() {
-  Promise.all([
-    fetch(DATA_URL).then(r => r.json()),
-    fetch(BOOK_URL).then(r => r.json()).catch(() => [])
-  ]).then(function(results) {
+  var json = await fetch(DATA_URL).then(r=>r.json());
+  var bookRaw = await fetch(BOOK_URL).then(r=>r.json()).catch(()=>[]);
 
-    var json = results[0];
-    var bookRaw = results[1];
+  var controllers = json.controllers || [];
+  var pilots = json.pilots || [];
+  var bookings = Array.isArray(bookRaw) ? bookRaw : (bookRaw.data || []);
 
-    var controllers = json.controllers || [];
-    var pilots = json.pilots || [];
-    var bookings = Array.isArray(bookRaw) ? bookRaw : (bookRaw.data || []);
+  var now = new Date();
+  var in12h = new Date(now.getTime() + 12*3600*1000);
 
-    var now = new Date();
-    var in12h = new Date(now.getTime() + 12*3600*1000);
+  var out = {
+    UPDATED: now.toISOString(),
+    airports: {}
+  };
 
-    var output = {
-      UPDATED: now.toISOString(),
-      airports: {}
+  for (var a=0;a<AIRPORTS.length;a++){
+    var icao = AIRPORTS[a];
+
+    var ap = {
+      controllers: {DEL:null,GND:null,TWR:null,APP:null},
+      traffic: {departures:0,arrivals:0,airborne_departures:0,airborne_arrivals:0},
+      bookings:[]
     };
 
-    for (var a=0; a<AIRPORTS.length; a++) {
-      var icao = AIRPORTS[a];
+    for (var c=0;c<controllers.length;c++){
+      var cs = controllers[c].callsign||'';
+      if (!cs.startsWith(icao)) continue;
 
-      var airport = {
-        controllers: {
-          DEL: null,
-          GND: null,
-          TWR: null,
-          APP: null
-        },
-        traffic: {
-          departures: 0,
-          arrivals: 0,
-          airborne_departures: 0,
-          airborne_arrivals: 0
-        },
-        bookings: []
-      };
-
-      // CONTROLLERS
-      for (var c=0; c<controllers.length; c++) {
-        var cs = controllers[c].callsign || '';
-        if (cs.toUpperCase().indexOf(icao) !== 0) continue;
-
-        var role = getRole(cs);
-        if (role && airport.controllers[role] === null) {
-          airport.controllers[role] = {
-            frequency: controllers[c].frequency || "?"
-          };
-        }
+      var role = getRole(cs);
+      if (role && ap.controllers[role]===null){
+        ap.controllers[role] = {
+          frequency: controllers[c].frequency
+        };
       }
-
-      // PILOTS / TRAFFIC
-      for (var p=0; p<pilots.length; p++) {
-        var fp = pilots[p].flight_plan;
-        if (!fp) continue;
-
-        var gs = pilots[p].groundspeed || 0;
-
-        if ((fp.departure||'').toUpperCase() === icao) {
-          airport.traffic.departures++;
-          if (gs > 50) airport.traffic.airborne_departures++;
-        }
-
-        if ((fp.arrival||'').toUpperCase() === icao) {
-          airport.traffic.arrivals++;
-          if (gs > 50) airport.traffic.airborne_arrivals++;
-        }
-      }
-
-      // BOOKINGS
-      for (var b=0; b<bookings.length; b++) {
-        var bk = bookings[b];
-        var bcs = (bk.callsign || bk.position || '').toUpperCase();
-
-        if (bcs.indexOf(icao) !== 0) continue;
-
-        var bs = new Date(bk.time_start || bk.start || bk.from || 0);
-        var be = new Date(bk.time_end || bk.end || bk.to || 0);
-
-        if (be > now && bs < in12h) {
-          airport.bookings.push({
-            callsign: bcs,
-            start: bs.toISOString(),
-            end: be.toISOString()
-          });
-        }
-      }
-
-      output.airports[icao] = airport;
     }
 
-    // SHOW JSON (ESP CAN PARSE THIS)
-    document.getElementById('o').textContent =
-      JSON.stringify(output, null, 2);
+    for (var p=0;p<pilots.length;p++){
+      var fp = pilots[p].flight_plan;
+      if (!fp) continue;
 
-  }).catch(function(e) {
-    document.getElementById('o').textContent = JSON.stringify({
-      error: e.message
-    });
-  });
+      var gs = pilots[p].groundspeed || 0;
+
+      if ((fp.departure||'').toUpperCase()===icao){
+        ap.traffic.departures++;
+        if (gs>50) ap.traffic.airborne_departures++;
+      }
+
+      if ((fp.arrival||'').toUpperCase()===icao){
+        ap.traffic.arrivals++;
+        if (gs>50) ap.traffic.airborne_arrivals++;
+      }
+    }
+
+    for (var b=0;b<bookings.length;b++){
+      var bk = bookings[b];
+      var bcs = (bk.callsign||bk.position||'').toUpperCase();
+      if (!bcs.startsWith(icao)) continue;
+
+      ap.bookings.push(bk);
+    }
+
+    out.airports[icao] = ap;
+  }
+
+  document.getElementById("o").textContent =
+    JSON.stringify(out, null, 2);
 }
 
 run();
