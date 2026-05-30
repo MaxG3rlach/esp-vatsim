@@ -1,7 +1,7 @@
 const https = require('https');
 const fs    = require('fs');
 
-const AIRPORTS     = ['EHRD', 'EHAM', 'EHGG', 'EHEH'];
+const AIRPORTS     = ['EHRD', 'EHAM', 'EHSE', 'EHEH'];
 const DATA_URL     = 'https://data.vatsim.net/v3/vatsim-data.json';
 const BOOK_URL     = 'https://atc-bookings.vatsim.net/api/bookings';
 const ROLE_SUFFIXES = {
