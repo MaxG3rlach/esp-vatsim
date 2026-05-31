@@ -2,7 +2,7 @@ name: Fetch VATSIM Data
 
 on:
   schedule:
-    - cron: '*/7 * * * *'   # every 7 minutes
+    - cron: '*10/7 * * * *'   # every 7 minutes
   workflow_dispatch:          # allow manual trigger
 
 jobs:
